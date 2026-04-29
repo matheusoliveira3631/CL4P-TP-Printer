@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SUNMI MQTT Printer</string>
+    <string name="screen_title">SUNMI MQTT Printing MVP</string>
+    <string name="status_starting">Starting printer and MQTT setup...</string>
+    <string name="test_printer">Test Printer</string>
+</resources>
