@@ -34,19 +34,21 @@ class MqttPayloadParser {
                 payloadObject.optString("content"),
                 payloadObject.optString("text")
             )
-            if (text.isBlank()) {
-                Log.w(TAG, "Ignoring JSON payload without printable text")
+            val imageObject = payloadObject.optJSONObject("image")
+            val imageBase64 = imageObject?.optString("base64")?.trim() ?: ""
+
+            if (text.isBlank() && imageBase64.isBlank()) {
+                Log.w(TAG, "Ignoring JSON payload without printable text or image")
                 null
             } else {
                 val jobId = firstNonBlank(
                     payloadObject.optString("jobId"),
                     jsonObject.optString("id")
                 ).ifBlank { fallbackJobId() }
-                val imageObject = payloadObject.optJSONObject("image")
                 PrintJob(
                     jobId = jobId,
                     text = text,
-                    imageBase64 = imageObject?.optString("base64")?.trim() ?: "",
+                    imageBase64 = imageBase64,
                     imageMime = imageObject?.optString("mime")?.trim() ?: "",
                     imageMode = imageObject?.optString("mode")?.trim() ?: ""
                 )
