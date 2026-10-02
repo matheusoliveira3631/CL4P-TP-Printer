@@ -1,27 +1,45 @@
 package com.matheusoliveira.cl4ptpprinter
 
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.os.Build
 import android.os.Bundle
-import android.util.Log
+import android.os.IBinder
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import com.matheusoliveira.cl4ptpprinter.model.PrintJob
-import com.matheusoliveira.cl4ptpprinter.mqtt.MqttManager
-import com.matheusoliveira.cl4ptpprinter.printer.PrintExecutor
-import com.matheusoliveira.cl4ptpprinter.printer.PrintFormatter
-import com.matheusoliveira.cl4ptpprinter.printer.SunmiPrinterManager
+import com.matheusoliveira.cl4ptpprinter.service.PrintConnectionService
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var statusTextView: TextView
     private lateinit var testPrinterButton: Button
-    private lateinit var printerManager: SunmiPrinterManager
-    private lateinit var printExecutor: PrintExecutor
-    private lateinit var mqttManager: MqttManager
+    private lateinit var reconnectButton: Button
 
-    private var printerStatus: String = "Printer status not started yet."
-    private var mqttStatus: String = "MQTT status not started yet."
-    private var printStatus: String = "No print jobs yet."
+    private var service: PrintConnectionService? = null
+    private var bound = false
+
+    private val statusListener: (String, String, String) -> Unit = { printer, mqtt, print ->
+        runOnUiThread {
+            statusTextView.text = listOf(printer, mqtt, print).joinToString(separator = "\n\n")
+        }
+    }
+
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            val localBinder = binder as? PrintConnectionService.LocalBinder ?: return
+            service = localBinder.getService()
+            bound = true
+            service?.setStatusListener(statusListener)
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            service = null
+            bound = false
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,70 +47,31 @@ class MainActivity : AppCompatActivity() {
 
         statusTextView = findViewById(R.id.statusTextView)
         testPrinterButton = findViewById(R.id.testPrinterButton)
-
-        printerManager = SunmiPrinterManager(applicationContext) { message ->
-            updatePrinterStatus(message)
-        }
-        mqttManager = MqttManager(
-            statusListener = { message -> updateMqttStatus(message) },
-            printJobListener = { job -> printExecutor.enqueue(job) }
-        )
-        printExecutor = PrintExecutor(
-            context = applicationContext,
-            printerManager = printerManager,
-            formatter = PrintFormatter(),
-            statusListener = { message -> updatePrintStatus(message) },
-            jobStatusListener = { job, status, message, error ->
-                mqttManager.publishPrintStatus(job, status, message, error)
-            }
-        )
-
-        updatePrinterStatus("Initializing printer manager...")
-        printerManager.initialize()
-        mqttManager.connect()
+        reconnectButton = findViewById(R.id.reconnectButton)
 
         testPrinterButton.setOnClickListener {
-            printExecutor.enqueue(
-                PrintJob(
-                    jobId = "manual-test",
-                    text = "Teste manual do MVP MQTT.\n\nTexto com acentos: ação, impressão, São Paulo."
-                )
-            )
+            service?.testPrint()
         }
-    }
 
-    override fun onDestroy() {
-        mqttManager.disconnect()
-        printExecutor.release()
-        printerManager.release()
-        super.onDestroy()
-    }
-
-    private fun updatePrinterStatus(message: String) {
-        Log.d(TAG, message)
-        printerStatus = "Printer: $message"
-        renderStatus()
-    }
-
-    private fun updateMqttStatus(message: String) {
-        Log.d(TAG, message)
-        mqttStatus = "MQTT: $message"
-        renderStatus()
-    }
-
-    private fun updatePrintStatus(message: String) {
-        Log.d(TAG, message)
-        printStatus = "Print: $message"
-        renderStatus()
-    }
-
-    private fun renderStatus() {
-        runOnUiThread {
-            statusTextView.text = listOf(printerStatus, mqttStatus, printStatus).joinToString(separator = "\n\n")
+        reconnectButton.setOnClickListener {
+            service?.reconnectMqtt()
         }
+
+        val serviceIntent = Intent(this, PrintConnectionService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
+        bindService(serviceIntent, connection, Context.BIND_AUTO_CREATE)
     }
 
-    companion object {
-        private const val TAG = "MainActivity"
+    override fun onStop() {
+        if (bound) {
+            service?.setStatusListener(null)
+            unbindService(connection)
+            bound = false
+        }
+        super.onStop()
     }
 }

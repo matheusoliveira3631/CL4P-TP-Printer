@@ -26,56 +26,95 @@ class MqttManager(
     private var mqttClient: MqttClient? = null
 
     fun connect() {
+        worker.execute {
+            connectInternal()
+        }
+    }
+
+    private fun connectInternal() {
         if (!MqttConfig.isConfigured()) {
             notifyStatus("MQTT disabled. Update MqttConfig before connecting to the broker.")
             return
         }
 
-        worker.execute {
-            val existingClient = mqttClient
-            if (existingClient != null && existingClient.isConnected) {
-                notifyStatus("MQTT already connected.")
-                return@execute
-            }
+        val existingClient = mqttClient
+        if (existingClient != null && existingClient.isConnected) {
+            notifyStatus("MQTT already connected.")
+            return
+        }
 
-            try {
-                notifyStatus("Connecting to MQTT broker ${MqttConfig.brokerUri()}...")
-                val client = MqttClient(
-                    MqttConfig.brokerUri(),
-                    MqttConfig.CLIENT_ID,
-                    MemoryPersistence()
-                )
-                client.setCallback(buildCallback(client))
-                client.connect(buildConnectOptions())
-                mqttClient = client
-            } catch (error: MqttException) {
-                Log.e(TAG, "MQTT connect failed", error)
-                notifyStatus("MQTT connection failed: ${error.message}")
-            } catch (error: Exception) {
-                Log.e(TAG, "Unexpected MQTT connect failure", error)
-                notifyStatus("Unexpected MQTT failure: ${error.message}")
-            }
+        try {
+            notifyStatus("Connecting to MQTT broker ${MqttConfig.brokerUri()}...")
+            val client = MqttClient(
+                MqttConfig.brokerUri(),
+                MqttConfig.CLIENT_ID,
+                MemoryPersistence()
+            )
+            client.setCallback(buildCallback(client))
+            client.connect(buildConnectOptions())
+            mqttClient = client
+        } catch (error: MqttException) {
+            Log.e(TAG, "MQTT connect failed", error)
+            notifyStatus("MQTT connection failed: ${error.message}")
+        } catch (error: Exception) {
+            Log.e(TAG, "Unexpected MQTT connect failure", error)
+            notifyStatus("Unexpected MQTT failure: ${error.message}")
         }
     }
 
+    /**
+     * Tears down the current client connection but keeps the worker thread
+     * alive so connect()/reconnect() still work afterwards. Use release()
+     * instead when the manager itself is being torn down for good.
+     */
     fun disconnect() {
         worker.execute {
-            val client = mqttClient
-            try {
-                if (client != null) {
-                    if (client.isConnected) {
-                        client.disconnect()
-                    }
-                    client.close()
+            disconnectInternal()
+        }
+    }
+
+    /**
+     * Forces a fresh connection attempt: tears down whatever client exists
+     * (if any) and immediately connects again, instead of waiting on Paho's
+     * own automatic-reconnect backoff.
+     */
+    fun reconnect() {
+        worker.execute {
+            notifyStatus("Reconectando manualmente...")
+            disconnectInternal()
+            connectInternal()
+        }
+    }
+
+    fun isConnected(): Boolean = mqttClient?.isConnected == true
+
+    /**
+     * Final teardown: disconnects the client and shuts down the worker
+     * thread. Call this only when the manager will not be used again
+     * (e.g. the owning service is being destroyed).
+     */
+    fun release() {
+        worker.execute {
+            disconnectInternal()
+        }
+        worker.shutdown()
+    }
+
+    private fun disconnectInternal() {
+        val client = mqttClient
+        try {
+            if (client != null) {
+                if (client.isConnected) {
+                    client.disconnect()
                 }
-                notifyStatus("MQTT disconnected.")
-            } catch (error: MqttException) {
-                Log.w(TAG, "MQTT disconnect failed", error)
-                notifyStatus("MQTT disconnect failed: ${error.message}")
-            } finally {
-                mqttClient = null
-                worker.shutdown()
+                client.close()
             }
+            notifyStatus("MQTT disconnected.")
+        } catch (error: MqttException) {
+            Log.w(TAG, "MQTT disconnect failed", error)
+            notifyStatus("MQTT disconnect failed: ${error.message}")
+        } finally {
+            mqttClient = null
         }
     }
 
