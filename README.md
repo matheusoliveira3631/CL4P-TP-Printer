@@ -2,6 +2,8 @@
 
 Incremental Android Studio project in Kotlin for a SUNMI P2. The built-in printer integration remains in place, and this version adds the first MQTT-based printing flow.
 
+This app is the printing client for [CL4P-TP](https://github.com/matheusoliveira3631/CL4P-TP), an offline-first Node.js server with an embedded MQTT broker. The server publishes print requests, this app prints them and publishes the job status back.
+
 ## What this MVP does
 
 - Keeps the existing SUNMI built-in printer integration
@@ -28,7 +30,7 @@ Incremental Android Studio project in Kotlin for a SUNMI P2. The built-in printe
 
 1. Open Android Studio.
 2. Choose `Open`.
-3. Select the folder `C:\Users\mathe\code\CL4P-TP_Printer`.
+3. Select the project folder (the one that contains `settings.gradle`).
 4. Let Gradle sync finish.
 5. If this is the first build on the machine, keep internet access enabled so Gradle can download project dependencies.
 
@@ -51,7 +53,7 @@ From the project root:
 
 After a successful debug build, the APK is generated at:
 
-`C:\Users\mathe\code\CL4P-TP_Printer\app\build\outputs\apk\debug\app-debug.apk`
+`app/build/outputs/apk/debug/app-debug.apk`
 
 ## MQTT configuration
 
